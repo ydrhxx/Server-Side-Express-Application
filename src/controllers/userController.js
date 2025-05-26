@@ -1,43 +1,37 @@
+// src/controllers/userController.js
 const knex = require('../db/knex');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
-
-exports.register = async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password)
-    return res.status(400).json({ error: true, message: "Email and password required." });
-
-  // Check if user already exists
-  const user = await knex('users').where({ email }).first();
-  if (user)
-    return res.status(400).json({ error: true, message: "User already exists." });
-
-  // Hash password
-  const hash = await bcrypt.hash(password, 10);
-
-  // Insert user
-  await knex('users').insert({ email, password: hash });
-
-  res.status(201).json({ email });
-};
-
 exports.login = async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password)
-    return res.status(400).json({ error: true, message: "Email and password required." });
 
-  const user = await knex('users').where({ email }).first();
-  if (!user)
-    return res.status(401).json({ error: true, message: "Invalid credentials." });
+  // Validate input
+  if (!email || !password) {
+    return res.status(400).json({ message: 'Email and password are required.' });
+  }
 
-  const valid = await bcrypt.compare(password, user.password);
-  if (!valid)
-    return res.status(401).json({ error: true, message: "Invalid credentials." });
+  try {
+    // Get user from DB
+    const user = await knex('users').where({ email }).first();
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid email or password.' });
+    }
 
-  // Create JWT
-  const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '10m' });
+    // Check password
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) {
+      return res.status(401).json({ message: 'Invalid email or password.' });
+    }
 
-  res.json({ token });
-};
+    // Generate tokens (dummy secret, replace in prod!)
+    const bearerToken = jwt.sign({ id: user.id, email: user.email }, 'SECRET', { expiresIn: '1h' });
+    const refreshToken = jwt.sign({ id: user.id }, 'REFRESH_SECRET', { expiresIn: '7d' });
+
+    return res.status(200).json({
+      bearerToken: { token: bearerToken, token_type: 'Bearer', expires_in: 3600 },
+      refreshToken: { token: refreshToken, expires_in: 604800 },
+      user: { id: user.id, email: user.email }
+    });
+  } catch (err) {
+    return res.status(500).json({ mess

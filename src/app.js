@@ -7,6 +7,7 @@ app.use(express.json());
 
 // Serve Swagger docs at root
 app.use('/', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+
 const testRoutes = require('./routes/test');
 app.use('/test', testRoutes);
 
