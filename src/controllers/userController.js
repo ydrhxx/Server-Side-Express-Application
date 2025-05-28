@@ -1,27 +1,34 @@
 const knex = require('../db/knex');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const moment = require('moment');
 const SECRET = process.env.JWT_SECRET;
 
 exports.register = async (req, res) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-  if (!email || !password)
-    return res.status(400).json({
-      error: true,
-      message: 'Request body incomplete: email and password are required.'
+    if (!email || !password) {
+      return res.status(400).json({ error: true, message: 'Email and password are required' });
+    }
+
+    const existing = await knex('users').where({ email }).first();
+    if (existing) {
+      return res.status(409).json({ error: true, message: 'Email is already registered' });
+    }
+
+    const hashed = await bcrypt.hash(password, 10);
+
+    await knex('users').insert({ email, password: hashed });
+
+    return res.status(201).json({
+      message: 'User registered successfully',
     });
 
-  const existingUser = await knex('users').where({ email }).first();
-  if (existingUser)
-    return res.status(409).json({
-      error: true,
-      message: 'User already exists.'
-    });
-
-  const hash = await bcrypt.hash(password, 10);
-  const [newUser] = await knex('users').insert({ email, password: hash }).returning(['id', 'email']);
-  return res.status(201).json({ id: newUser.id, email: newUser.email });
+  } catch (err) {
+    console.error('[REGISTER ERROR]', err);
+    res.status(500).json({ error: true, message: 'Internal server error' });
+  }
 };
 
 exports.login = async (req, res) => {
@@ -113,27 +120,29 @@ exports.getProfile = async (req, res) => {
 };
 
 exports.updateProfile = async (req, res) => {
-  const { email } = req.params;
-  const { firstName, lastName, dob, address } = req.body;
+  try {
+    const { email } = req.params;
+    let { firstName, lastName, dob, address } = req.body;
 
-  const authEmail = req.user.email;
-  if (authEmail !== email)
-    return res.status(403).json({
-      error: true,
-      message: 'Forbidden: you can only update your own profile.'
-    });
+    // Format and validate dob
+    if (dob) {
+      const formatted = moment(dob, moment.ISO_8601, true);
+      if (!formatted.isValid()) {
+        return res.status(400).json({ error: true, message: 'Invalid date format for dob' });
+      }
+      dob = formatted.format('YYYY-MM-DD');
+    }
 
-  if (!firstName || !lastName || !dob || !address)
-    return res.status(400).json({
-      error: true,
-      message: 'Request body incomplete: all profile fields are required.'
-    });
+    const result = await knex('users')
+      .where({ email })
+      .update({ firstName, lastName, dob, address });
 
-  await knex('users')
-    .where({ email })
-    .update({ firstName, lastName, dob, address });
+    if (result === 0) {
+      return res.status(404).json({ error: true, message: 'User not found' });
+    }
 
-  return res.status(200).json({
-    message: 'Profile updated successfully.'
-  });
+    res.status(200).json({ success: true, message: 'Profile updated' });
+  } catch (err) {
+    res.status(500).json({ error: true, message: err.message });
+  }
 };
