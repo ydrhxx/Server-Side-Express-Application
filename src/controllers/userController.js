@@ -105,36 +105,27 @@ exports.logout = async (req, res) => {
 
 exports.getProfile = async (req, res) => {
   const { email } = req.params;
-  const requestingUser = req.user?.email;
-
-  const user = await knex('users')
-    .select('email', 'firstName', 'lastName', 'dob', 'address')
-    .where({ email })
-    .first();
+  const user = await knex('users').where({ email }).first();
 
   if (!user) {
-    return res.status(404).json({
+    return res.status(404).json({ error: true, message: 'User not found' });
+  }
+
+  // If the request is authenticated but not for the same user
+  if (req.user && req.user.email !== email) {
+    return res.status(403).json({
       error: true,
-      message: 'User not found'
+      message: 'Forbidden: user does not have access to this profile'
     });
   }
 
-  // Only allow full profile if requesting own
-  if (requestingUser && requestingUser === email) {
-    return res.json({
-      email: user.email,
-      firstName: user.firstName ?? null,
-      lastName: user.lastName ?? null,
-      dob: user.dob ?? null,
-      address: user.address ?? null
-    });
-  } else {
-    return res.json({
-      email: user.email,
-      firstName: user.firstName ?? null,
-      lastName: user.lastName ?? null
-    });
-  }
+  return res.status(200).json({
+    email: user.email,
+    firstName: user.firstName || null,
+    lastName: user.lastName || null,
+    dob: req.user ? user.dob : undefined,
+    address: req.user ? user.address : undefined
+  });
 };
 
 exports.updateProfile = async (req, res) => {
