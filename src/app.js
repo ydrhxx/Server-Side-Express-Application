@@ -26,6 +26,7 @@ const moviesRoutes = require('./routes/movies');
 const userRoutes = require('./routes/user');
 const peopleRoutes = require('./routes/people');
 
+
 app.use('/test', testRoutes);
 app.use('/movies', moviesRoutes);
 app.use('/user', userRoutes);

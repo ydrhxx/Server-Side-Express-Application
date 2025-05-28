@@ -4,17 +4,11 @@ const SECRET = process.env.JWT_SECRET || 'default-dev-secret';
 module.exports = function authenticateJWT(req, res, next) {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader) {
+  // Use same message for both missing and malformed headers (test suite expects this)
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({
       error: true,
       message: "Authorization header ('Bearer token') not found"
-    });
-  }
-
-  if (!authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({
-      error: true,
-      message: 'Authorization header is malformed'
     });
   }
 
@@ -35,7 +29,7 @@ module.exports = function authenticateJWT(req, res, next) {
       });
     }
 
-    req.user = payload; // Store user info on the request object
+    req.user = payload;
     next();
   });
 };

@@ -1,6 +1,5 @@
 const express = require('express');
 const router = express.Router();
-const peopleController = require('../controllers/peopleController');
 const authenticateJWT = require('../middleware/auth');
 const knex = require('../db/knex');
 
@@ -42,7 +41,7 @@ router.get('/:id', authenticateJWT, async (req, res) => {
       )
       .where('principals.nconst', id);
 
-    // Get characters (skip if table doesn't exist)
+    // Check if characters table exists
     let charactersTableExists = true;
     try {
       await knex('characters').count('*');
@@ -54,11 +53,16 @@ router.get('/:id', authenticateJWT, async (req, res) => {
       }
     }
 
+    // Attach characters and parse imdbRating to number
     for (const role of roles) {
+      // Convert imdbRating from string to number (or null if missing)
+      role.imdbRating = role.imdbRating !== null ? parseFloat(role.imdbRating) : null;
+
       if (charactersTableExists) {
         const charRow = await knex('characters')
           .select('name')
           .where({ tconst: role.movieId, nconst: id });
+
         role.characters = charRow.map(c => c.name);
       } else {
         role.characters = [];

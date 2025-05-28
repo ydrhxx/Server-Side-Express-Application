@@ -105,44 +105,90 @@ exports.logout = async (req, res) => {
 
 exports.getProfile = async (req, res) => {
   const { email } = req.params;
-  if (!email) return res.status(400).json({ error: true, message: 'Email required' });
+  const requestingUser = req.user?.email;
 
-  const user = await knex('users').where({ email }).first();
-  if (!user) return res.status(404).json({ error: true, message: 'User not found' });
+  const user = await knex('users')
+    .select('email', 'firstName', 'lastName', 'dob', 'address')
+    .where({ email })
+    .first();
 
-  return res.status(200).json({
-    email: user.email,
-    firstName: user.firstName || null,
-    lastName: user.lastName || null,
-    dob: user.dob || null,
-    address: user.address || null
-  });
+  if (!user) {
+    return res.status(404).json({
+      error: true,
+      message: 'User not found'
+    });
+  }
+
+  // Only allow full profile if requesting own
+  if (requestingUser && requestingUser === email) {
+    return res.json({
+      email: user.email,
+      firstName: user.firstName ?? null,
+      lastName: user.lastName ?? null,
+      dob: user.dob ?? null,
+      address: user.address ?? null
+    });
+  } else {
+    return res.json({
+      email: user.email,
+      firstName: user.firstName ?? null,
+      lastName: user.lastName ?? null
+    });
+  }
 };
 
 exports.updateProfile = async (req, res) => {
+  const { email } = req.params;
+  let { firstName, lastName, dob, address } = req.body;
+
+  // === Validation ===
+  if (firstName === undefined || lastName === undefined || dob === undefined || address === undefined) {
+    return res.status(400).json({
+      error: true,
+      message: 'Request body incomplete: firstName, lastName, dob and address are required.'
+    });
+  }
+
+  if (typeof firstName !== 'string' || typeof lastName !== 'string' || typeof address !== 'string') {
+    return res.status(400).json({
+      error: true,
+      message: 'Request body invalid: firstName, lastName and address must be strings only.'
+    });
+  }
+
+  const formatted = moment(dob, 'YYYY-MM-DD', true);
+  if (!formatted.isValid()) {
+    return res.status(400).json({
+      error: true,
+      message: 'Invalid input: dob must be a real date in format YYYY-MM-DD.'
+    });
+  }
+
+  const now = moment().startOf('day');
+  if (formatted.isAfter(now)) {
+    return res.status(400).json({
+      error: true,
+      message: 'Invalid input: dob must be a date in the past.'
+    });
+  }
+
   try {
-    const { email } = req.params;
-    let { firstName, lastName, dob, address } = req.body;
-
-    // Format and validate dob
-    if (dob) {
-      const formatted = moment(dob, moment.ISO_8601, true);
-      if (!formatted.isValid()) {
-        return res.status(400).json({ error: true, message: 'Invalid date format for dob' });
-      }
-      dob = formatted.format('YYYY-MM-DD');
-    }
-
     const result = await knex('users')
       .where({ email })
-      .update({ firstName, lastName, dob, address });
+      .update({ firstName, lastName, dob: formatted.format('YYYY-MM-DD'), address });
 
     if (result === 0) {
       return res.status(404).json({ error: true, message: 'User not found' });
     }
 
-    res.status(200).json({ success: true, message: 'Profile updated' });
+    const updated = await knex('users')
+      .select('email', 'firstName', 'lastName', 'dob', 'address')
+      .where({ email })
+      .first();
+
+    res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: true, message: err.message });
+    console.error(err);
+    res.status(500).json({ error: true, message: 'Internal server error' });
   }
 };
