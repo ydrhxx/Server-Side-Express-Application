@@ -1,113 +1,58 @@
+// src/controllers/moviesController.js
 const knex = require('../db/knex');
 
-// GET /movies/search
 exports.search = async (req, res) => {
   try {
     const { year, title, page = 1, perPage = 10 } = req.query;
 
-    const safePage = Number(page) > 0 ? Number(page) : 1;
-    const safePerPage = Number(perPage) > 0 ? Number(perPage) : 10;
+    const parsedPage = parseInt(page, 10);
+    const parsedPerPage = parseInt(perPage, 10);
 
-    // Main query builder
+    if (isNaN(parsedPage) || parsedPage < 1 || isNaN(parsedPerPage) || parsedPerPage < 1) {
+      return res.status(400).json({ error: true, message: 'Invalid pagination values' });
+    }
+
     let query = knex('basics')
-      .leftJoin('ratings', 'basics.tconst', 'ratings.tconst')
+      .join('ratings', 'basics.tconst', 'ratings.tconst')
       .select(
         'basics.tconst as imdbID',
         'basics.primaryTitle as title',
         'basics.year',
-        knex.raw(`MAX(CASE WHEN ratings.source = 'Internet Movie Database' THEN ratings.value END) as imdbRating`),
-        knex.raw(`MAX(CASE WHEN ratings.source = 'Rotten Tomatoes' THEN ratings.value END) as rottenTomatoesRating`),
-        knex.raw(`MAX(CASE WHEN ratings.source = 'Metacritic' THEN ratings.value END) as metacriticRating`),
+        'basics.runtimeMinutes',
+        'basics.genres',
+        knex.raw("CAST(REPLACE(ratings.imdbRating, '/10', '') AS DECIMAL(3,1)) as imdbRating"),
+        knex.raw("CAST(REPLACE(ratings.rottenTomatoesRating, '%', '') AS UNSIGNED) as rottenTomatoesRating"),
+        knex.raw("CAST(REPLACE(ratings.metacriticRating, '/100', '') AS UNSIGNED) as metacriticRating"),
         'basics.titleType as classification'
       );
 
-    if (year) {
-      if (!/^\d{4}$/.test(year)) {
-        return res.status(400).json({ message: 'Invalid year format. Format must be yyyy.' });
-      }
-      query.where('basics.year', year);
-    }
+    if (year) query = query.where('basics.year', year);
+    if (title) query = query.where('basics.primaryTitle', 'like', `%${title}%`);
 
-    if (title) {
-      query.where('basics.primaryTitle', 'like', `%${title}%`);
-    }
-
-    query.groupBy(
-      'basics.tconst',
-      'basics.primaryTitle',
-      'basics.year',
-      'basics.titleType'
-    );
-
-    // Separate count query (safer than clone().count())
-    const countQuery = knex('basics')
-      .modify((qb) => {
-        if (year) qb.where('basics.year', year);
-        if (title) qb.where('basics.primaryTitle', 'like', `%${title}%`);
-      })
-      .countDistinct('basics.tconst as count')
-      .first();
-
-    const totalResult = await countQuery;
-    const total = parseInt(totalResult?.count || 0);
-    const lastPage = Math.ceil(total / safePerPage);
+    const totalResult = await query.clone().count('* as count').first();
+    const total = Number(totalResult.count);
+    const lastPage = Math.ceil(total / parsedPerPage);
 
     const movies = await query
-      .limit(safePerPage)
-      .offset((safePage - 1) * safePerPage);
+      .limit(parsedPerPage)
+      .offset((parsedPage - 1) * parsedPerPage);
+
+    const pagination = {
+      total,
+      lastPage,
+      prevPage: parsedPage > 1 ? parsedPage - 1 : null,
+      nextPage: parsedPage < lastPage ? parsedPage + 1 : null,
+      perPage: parsedPerPage,
+      currentPage: parsedPage,
+      from: (parsedPage - 1) * parsedPerPage,
+      to: (parsedPage - 1) * parsedPerPage + movies.length
+    };
 
     res.status(200).json({
       data: movies,
-      total,
-      perPage: safePerPage,
-      currentPage: safePage,
-      lastPage,
-      from: (safePage - 1) * safePerPage + 1,
-      to: (safePage - 1) * safePerPage + movies.length
+      pagination
     });
-
   } catch (err) {
-    console.error('[MOVIES/SEARCH ERROR]', err);
-    res.status(500).json({ message: 'Server error', error: err.message });
-  }
-};
-
-// GET /movies/data/:imdbID
-exports.getMovieById = async (req, res) => {
-  try {
-    const { imdbID } = req.params;
-
-    const movie = await knex('basics')
-      .leftJoin('ratings', 'basics.tconst', 'ratings.tconst')
-      .select(
-        'basics.tconst as imdbID',
-        'basics.primaryTitle as title',
-        'basics.year',
-        'basics.runtimeMinutes',
-        'basics.genres',
-        knex.raw(`MAX(CASE WHEN ratings.source = 'Internet Movie Database' THEN ratings.value END) as imdbRating`),
-        knex.raw(`MAX(CASE WHEN ratings.source = 'Rotten Tomatoes' THEN ratings.value END) as rottenTomatoesRating`),
-        knex.raw(`MAX(CASE WHEN ratings.source = 'Metacritic' THEN ratings.value END) as metacriticRating`),
-        'basics.titleType as classification'
-      )
-      .where('basics.tconst', imdbID)
-      .groupBy(
-        'basics.tconst',
-        'basics.primaryTitle',
-        'basics.year',
-        'basics.runtimeMinutes',
-        'basics.genres',
-        'basics.titleType'
-      )
-      .first();
-
-    if (!movie) {
-      return res.status(404).json({ error: true, message: 'Movie not found' });
-    }
-
-    res.status(200).json(movie);
-  } catch (err) {
-    console.error('[MOVIES/GET ERROR]', err);
     res.status(500).json({ error: true, message: err.message });
   }
 };

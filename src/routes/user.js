@@ -1,17 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const userController = require('../controllers/userController');
+const controller = require('../controllers/userController');
+const auth = require('../middleware/auth');
 
-// Register new user
-router.post('/register', userController.register);
+// Auth routes
+router.post('/register', controller.register);
+router.post('/login', controller.login);
+router.post('/refresh', controller.refresh);
+router.post('/logout', controller.logout);
 
-// Login and receive JWT tokens
-router.post('/login', userController.login);
-
-// Refresh token
-router.post('/refresh', userController.refresh);
-
-// Logout (optional endpoint for client-side token clearing)
-router.post('/logout', userController.logout);
+// Profile routes (protected)
+router.get('/:email/profile', auth, controller.getProfile);
+router.put('/:email/profile', auth, controller.updateProfile);
 
 module.exports = router;
