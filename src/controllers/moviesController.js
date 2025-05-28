@@ -5,6 +5,10 @@ exports.search = async (req, res) => {
   try {
     const { year, title, page = 1, perPage = 10 } = req.query;
 
+    const safePage = Number(page) > 0 ? Number(page) : 1;
+    const safePerPage = Number(perPage) > 0 ? Number(perPage) : 10;
+
+    // Main query builder
     let query = knex('basics')
       .leftJoin('ratings', 'basics.tconst', 'ratings.tconst')
       .select(
@@ -21,36 +25,45 @@ exports.search = async (req, res) => {
       if (!/^\d{4}$/.test(year)) {
         return res.status(400).json({ message: 'Invalid year format. Format must be yyyy.' });
       }
-      query = query.where('basics.year', year);
+      query.where('basics.year', year);
     }
 
     if (title) {
-      query = query.where('basics.primaryTitle', 'like', `%${title}%`);
+      query.where('basics.primaryTitle', 'like', `%${title}%`);
     }
 
-    query = query.groupBy(
+    query.groupBy(
       'basics.tconst',
       'basics.primaryTitle',
       'basics.year',
       'basics.titleType'
     );
 
-    const totalResult = await query.clone().clearSelect().clearOrder()
-      .count('* as count')
+    // Separate count query (safer than clone().count())
+    const countQuery = knex('basics')
+      .modify((qb) => {
+        if (year) qb.where('basics.year', year);
+        if (title) qb.where('basics.primaryTitle', 'like', `%${title}%`);
+      })
+      .countDistinct('basics.tconst as count')
       .first();
-    const total = parseInt(totalResult.count);
 
-    const movies = await query.limit(perPage).offset((page - 1) * perPage);
-    const lastPage = Math.ceil(total / perPage);
+    const totalResult = await countQuery;
+    const total = parseInt(totalResult?.count || 0);
+    const lastPage = Math.ceil(total / safePerPage);
+
+    const movies = await query
+      .limit(safePerPage)
+      .offset((safePage - 1) * safePerPage);
 
     res.status(200).json({
       data: movies,
       total,
-      perPage: Number(perPage),
-      currentPage: Number(page),
+      perPage: safePerPage,
+      currentPage: safePage,
       lastPage,
-      from: (page - 1) * perPage + 1,
-      to: (page - 1) * perPage + movies.length
+      from: (safePage - 1) * safePerPage + 1,
+      to: (safePage - 1) * safePerPage + movies.length
     });
 
   } catch (err) {

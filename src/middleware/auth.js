@@ -1,14 +1,25 @@
 const jwt = require('jsonwebtoken');
-const SECRET = process.env.JWT_SECRET;
+const SECRET = process.env.JWT_SECRET || 'default-dev-secret';
 
 module.exports = function authenticateJWT(req, res, next) {
-  const h = req.headers.authorization;
-  if (!h || !h.startsWith('Bearer ')) {
-    return res
-      .status(401)
-      .json({ error: true, message: "Authorization header ('Bearer token') not found" });
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) {
+    return res.status(401).json({
+      error: true,
+      message: "Authorization header ('Bearer token') not found"
+    });
   }
-  const token = h.slice(7);
+
+  if (!authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({
+      error: true,
+      message: 'Authorization header is malformed'
+    });
+  }
+
+  const token = authHeader.slice(7);
+
   jwt.verify(token, SECRET, (err, payload) => {
     if (err) {
       if (err.name === 'TokenExpiredError') {
@@ -17,6 +28,8 @@ module.exports = function authenticateJWT(req, res, next) {
         return res.status(401).json({ error: true, message: 'Invalid JWT token' });
       }
     }
+
+    // Store user info on request
     req.user = payload;
     next();
   });
