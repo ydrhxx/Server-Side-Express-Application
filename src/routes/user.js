@@ -3,9 +3,11 @@ const router = express.Router();
 const knex = require('../db/knex');
 const jwt = require('jsonwebtoken');
 const auth = require('../middleware/auth');
+const moment = require('moment');
+
+// === Auth Controllers ===
 const controller = require('../controllers/userController');
 
-// === Auth Routes ===
 router.post('/register', controller.register);
 router.post('/login', controller.login);
 router.post('/refresh', controller.refresh);
@@ -13,10 +15,22 @@ router.post('/logout', controller.logout);
 
 // === Profile Routes ===
 
-// GET /user/:email/profile — accessible to everyone, but returns limited fields if unauthenticated
+// GET /user/:email/profile
 router.get('/:email/profile', async (req, res) => {
   try {
     const { email } = req.params;
+    const authHeader = req.headers.authorization;
+    let isSelf = false;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.slice(7);
+      try {
+        const payload = jwt.verify(token, process.env.JWT_SECRET);
+        isSelf = payload.email === email;
+      } catch (err) {
+        return res.status(403).json({ error: true, message: 'Invalid or expired token' });
+      }
+    }
 
     const user = await knex('users')
       .select('email', 'firstName', 'lastName', 'dob', 'address')
@@ -24,42 +38,29 @@ router.get('/:email/profile', async (req, res) => {
       .first();
 
     if (!user) {
-      return res.status(404).json({
-        error: true,
-        message: 'User not found'
-      });
+      return res.status(404).json({ error: true, message: 'User not found' });
     }
 
-    // Try to decode the token if present
-    let requesterEmail = null;
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.split(' ')[1];
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        requesterEmail = decoded.email;
-      } catch (_) {
-        // ignore invalid token
-      }
+    const response = {
+    email: user.email,
+    firstName: user.firstName ?? null,
+    lastName: user.lastName ?? null
+    };
+
+    if (isSelf) {
+    response.dob = user.dob ? moment(user.dob).format('YYYY-MM-DD') : null;
+    response.address = user.address ?? null;
     }
 
-    const isSelf = requesterEmail === email;
 
-    return res.status(200).json({
-      email: user.email,
-      firstName: user.firstName || null,
-      lastName: user.lastName || null,
-      dob: isSelf ? user.dob?.toISOString().split('T')[0] : undefined,
-      address: isSelf ? user.address : undefined
-    });
-
+    return res.status(200).json(response);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: true, message: 'Internal server error' });
+    return res.status(500).json({ error: true, message: 'Internal server error' });
   }
 });
 
-// PUT /user/:email/profile — must be authenticated
+// PUT /user/:email/profile
 router.put('/:email/profile', auth, async (req, res) => {
   const { email } = req.params;
 
@@ -72,29 +73,38 @@ router.put('/:email/profile', auth, async (req, res) => {
 
   const { firstName, lastName, dob, address } = req.body;
 
-  if ([firstName, lastName, dob, address].some(x => x === undefined)) {
+  if (
+    firstName === undefined ||
+    lastName === undefined ||
+    dob === undefined ||
+    address === undefined
+  ) {
     return res.status(400).json({
       error: true,
       message: 'Request body incomplete: firstName, lastName, dob and address are required.'
     });
   }
 
-  if ([firstName, lastName, address].some(x => typeof x !== 'string')) {
+  if (
+    typeof firstName !== 'string' ||
+    typeof lastName !== 'string' ||
+    typeof address !== 'string'
+  ) {
     return res.status(400).json({
       error: true,
       message: 'Request body invalid: firstName, lastName and address must be strings only.'
     });
   }
 
-  const date = new Date(dob);
-  if (isNaN(date.getTime()) || !dob.match(/^\d{4}-\d{2}-\d{2}$/)) {
+  const validDate = moment(dob, 'YYYY-MM-DD', true);
+  if (!validDate.isValid()) {
     return res.status(400).json({
       error: true,
       message: 'Invalid input: dob must be a real date in format YYYY-MM-DD.'
     });
   }
 
-  if (date > new Date()) {
+  if (validDate.isAfter(moment())) {
     return res.status(400).json({
       error: true,
       message: 'Invalid input: dob must be a date in the past.'
@@ -102,11 +112,14 @@ router.put('/:email/profile', auth, async (req, res) => {
   }
 
   try {
-    const updateResult = await knex('users').where({ email }).update({
-      firstName, lastName, dob, address
+    const updatedCount = await knex('users').where({ email }).update({
+      firstName,
+      lastName,
+      dob: validDate.format('YYYY-MM-DD'),
+      address
     });
 
-    if (updateResult === 0) {
+    if (updatedCount === 0) {
       return res.status(404).json({ error: true, message: 'User not found' });
     }
 
@@ -117,15 +130,14 @@ router.put('/:email/profile', auth, async (req, res) => {
 
     return res.status(200).json({
       email: updated.email,
-      firstName: updated.firstName || null,
-      lastName: updated.lastName || null,
-      dob: updated.dob?.toISOString().split('T')[0],
-      address: updated.address
+      firstName: updated.firstName ?? null,
+      lastName: updated.lastName ?? null,
+      dob: updated.dob ? moment(updated.dob).format('YYYY-MM-DD') : null,
+      address: updated.address ?? null
     });
-
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: true, message: 'Internal server error' });
+    return res.status(500).json({ error: true, message: 'Internal server error' });
   }
 });
 
