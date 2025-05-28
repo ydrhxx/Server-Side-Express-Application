@@ -1,58 +1,102 @@
-// src/controllers/moviesController.js
 const knex = require('../db/knex');
 
-exports.search = async (req, res) => {
+// GET /movies/search
+exports.searchMovies = async (req, res) => {
   try {
-    const { year, title, page = 1, perPage = 10 } = req.query;
+    const { title, year, page = 1, limit = 100 } = req.query;
 
     const parsedPage = parseInt(page, 10);
-    const parsedPerPage = parseInt(perPage, 10);
+    const parsedLimit = parseInt(limit, 10);
 
-    if (isNaN(parsedPage) || parsedPage < 1 || isNaN(parsedPerPage) || parsedPerPage < 1) {
-      return res.status(400).json({ error: true, message: 'Invalid pagination values' });
+    if (isNaN(parsedPage) || parsedPage < 1) {
+      return res.status(400).json({ message: 'Invalid page format. page must be a number.' });
     }
 
-    let query = knex('basics')
-      .join('ratings', 'basics.tconst', 'ratings.tconst')
+    if (year && isNaN(parseInt(year))) {
+      return res.status(400).json({ message: 'Invalid year format. Format must be yyyy.' });
+    }
+
+    const offset = (parsedPage - 1) * parsedLimit;
+
+    const baseQuery = knex('basics')
       .select(
-        'basics.tconst as imdbID',
-        'basics.primaryTitle as title',
-        'basics.year',
-        'basics.runtimeMinutes',
-        'basics.genres',
-        knex.raw("CAST(REPLACE(ratings.imdbRating, '/10', '') AS DECIMAL(3,1)) as imdbRating"),
-        knex.raw("CAST(REPLACE(ratings.rottenTomatoesRating, '%', '') AS UNSIGNED) as rottenTomatoesRating"),
-        knex.raw("CAST(REPLACE(ratings.metacriticRating, '/100', '') AS UNSIGNED) as metacriticRating"),
-        'basics.titleType as classification'
-      );
+        'tconst as imdbID',
+        'primaryTitle as title',
+        'year',
+        'runtimeMinutes as runtime',
+        'genres',
+        'imdbRating',
+        'rottenTomatoesRating',
+        'metacriticRating',
+        'rated as classification'
+      )
+      .whereNotNull('tconst');
 
-    if (year) query = query.where('basics.year', year);
-    if (title) query = query.where('basics.primaryTitle', 'like', `%${title}%`);
+    if (title) {
+      baseQuery.andWhere('primaryTitle', 'like', `%${title}%`);
+    }
 
-    const totalResult = await query.clone().count('* as count').first();
-    const total = Number(totalResult.count);
-    const lastPage = Math.ceil(total / parsedPerPage);
+    if (year) {
+      baseQuery.andWhere('year', parseInt(year, 10));
+    }
 
-    const movies = await query
-      .limit(parsedPerPage)
-      .offset((parsedPage - 1) * parsedPerPage);
+    const dataQuery = baseQuery.clone().limit(parsedLimit).offset(offset);
+    const countQuery = baseQuery.clone().clearSelect().count('* as count').first();
 
-    const pagination = {
-      total,
-      lastPage,
-      prevPage: parsedPage > 1 ? parsedPage - 1 : null,
-      nextPage: parsedPage < lastPage ? parsedPage + 1 : null,
-      perPage: parsedPerPage,
-      currentPage: parsedPage,
-      from: (parsedPage - 1) * parsedPerPage,
-      to: (parsedPage - 1) * parsedPerPage + movies.length
-    };
+    const [data, countResult] = await Promise.all([dataQuery, countQuery]);
+    const total = parseInt(countResult.count, 10);
 
     res.status(200).json({
-      data: movies,
-      pagination
+      data,
+      pagination: {
+        total,
+        lastPage: Math.ceil(total / parsedLimit),
+        prevPage: parsedPage > 1 ? parsedPage - 1 : null,
+        nextPage: parsedPage * parsedLimit < total ? parsedPage + 1 : null,
+        perPage: parsedLimit,
+        currentPage: parsedPage,
+        from: offset,
+        to: offset + data.length
+      }
     });
+  } catch (error) {
+    console.error('Error in searchMovies:', error);
+    res.status(500).json({
+      error: true,
+      message: 'Failed to fetch movies'
+    });
+  }
+};
+
+// GET /movies/data/:imdbID
+exports.getMovieById = async (req, res) => {
+  try {
+    const { imdbID } = req.params;
+
+    const movie = await knex('basics')
+      .select(
+        'tconst as imdbID',
+        'primaryTitle as title',
+        'year',
+        'runtimeMinutes as runtime',
+        'genres',
+        'plot',
+        'poster',
+        'imdbRating',
+        'rottenTomatoesRating',
+        'metacriticRating',
+        'rated as classification'
+      )
+      .where('tconst', imdbID)
+      .first();
+
+    if (!movie) {
+      return res.status(404).json({ error: true, message: 'Movie not found' });
+    }
+
+    res.status(200).json(movie);
   } catch (err) {
-    res.status(500).json({ error: true, message: err.message });
+    console.error('Error in getMovieById:', err);
+    res.status(500).json({ error: true, message: 'Failed to fetch movie' });
   }
 };
