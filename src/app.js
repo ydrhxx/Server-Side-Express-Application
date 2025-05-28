@@ -1,11 +1,26 @@
 const express = require('express');
 const swaggerUi = require('swagger-ui-express');
+const cors = require('cors');
 const swaggerDocument = require('./docs/openapi.json');
 
 const app = express();
-app.use(express.json());
 
-// === Mount API routes ===
+// === Middleware ===
+app.use(express.json());
+app.use(cors());
+
+// === Force CORS headers for all responses ===
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  next();
+});
+
+// === Optional: Redirect root '/' to Swagger docs ===
+app.get('/', (req, res) => {
+  res.redirect('/docs');
+});
+
+// === API Routes ===
 const testRoutes = require('./routes/test');
 const moviesRoutes = require('./routes/movies');
 const userRoutes = require('./routes/user');
@@ -16,7 +31,15 @@ app.use('/movies', moviesRoutes);
 app.use('/user', userRoutes);
 app.use('/people', peopleRoutes);
 
-// === Swagger documentation ===
-app.use('/', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+// === Swagger Docs at /docs ===
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+
+// === 404 for unmatched routes ===
+app.use((req, res) => {
+  res.status(404).json({
+    error: true,
+    message: 'Route not found'
+  });
+});
 
 module.exports = app;
