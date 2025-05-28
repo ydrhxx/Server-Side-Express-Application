@@ -1,3 +1,4 @@
+
 const express = require('express');
 const swaggerUi = require('swagger-ui-express');
 const cors = require('cors');
@@ -21,13 +22,11 @@ app.get('/', (req, res) => {
 });
 
 // === API Routes ===
-const testRoutes = require('./routes/test');
 const moviesRoutes = require('./routes/movies');
 const userRoutes = require('./routes/user');
 const peopleRoutes = require('./routes/people');
 
 
-app.use('/test', testRoutes);
 app.use('/movies', moviesRoutes);
 app.use('/user', userRoutes);
 app.use('/people', peopleRoutes);

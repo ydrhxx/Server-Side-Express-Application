@@ -18,7 +18,6 @@ exports.register = async (req, res) => {
     }
 
     const hashed = await bcrypt.hash(password, 10);
-
     await knex('users').insert({ email, password: hashed });
 
     return res.status(201).json({
@@ -73,35 +72,81 @@ exports.login = async (req, res) => {
 
 exports.refresh = async (req, res) => {
   const { refreshToken } = req.body;
-  if (!refreshToken)
-    return res.status(401).json({
+
+  if (!refreshToken) {
+    return res.status(400).json({
       error: true,
-      message: 'Refresh token not provided.'
+      message: 'Request body incomplete, refresh token required'
     });
+  }
 
   try {
-    const payload = jwt.verify(refreshToken, SECRET);
-    const newAccessToken = jwt.sign({ email: payload.email }, SECRET, { expiresIn: '10m' });
+    const payload = jwt.verify(refreshToken, SECRET); // this throws TokenExpiredError
+
+    const accessToken = jwt.sign({ email: payload.email }, SECRET, { expiresIn: '10m' });
+    const newRefreshToken = jwt.sign({ email: payload.email }, SECRET, { expiresIn: '1d' });
 
     return res.status(200).json({
-      token: newAccessToken,
-      token_type: 'Bearer',
-      expires_in: 600
+      bearerToken: {
+        token: accessToken,
+        token_type: 'Bearer',
+        expires_in: 600
+      },
+      refreshToken: {
+        token: newRefreshToken,
+        token_type: 'Refresh',
+        expires_in: 86400
+      }
     });
-  } catch {
-    return res.status(403).json({
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        error: true,
+        message: 'JWT token has expired'
+      });
+    }
+
+    return res.status(401).json({
       error: true,
-      message: 'Invalid refresh token.'
+      message: 'Invalid JWT token'
     });
   }
 };
 
 exports.logout = async (req, res) => {
-  return res.status(200).json({
-    message: 'Successfully logged out.'
-    // If you want actual logout logic, consider using token blacklisting or DB invalidation
-  });
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.status(400).json({
+      error: true,
+      message: 'Request body incomplete, refresh token required'
+    });
+  }
+
+  try {
+    jwt.verify(refreshToken, SECRET); // will throw if expired or invalid
+
+    // (Optional) Here you would blacklist the token if implementing persistent sessions
+
+    return res.status(200).json({
+      error: false,
+      message: 'Token successfully invalidated'
+    });
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        error: true,
+        message: 'JWT token has expired'
+      });
+    }
+
+    return res.status(401).json({
+      error: true,
+      message: 'Invalid JWT token'
+    });
+  }
 };
+
 
 exports.getProfile = async (req, res) => {
   const { email } = req.params;
@@ -111,7 +156,6 @@ exports.getProfile = async (req, res) => {
     return res.status(404).json({ error: true, message: 'User not found' });
   }
 
-  // If the request is authenticated but not for the same user
   if (req.user && req.user.email !== email) {
     return res.status(403).json({
       error: true,
@@ -123,8 +167,8 @@ exports.getProfile = async (req, res) => {
     email: user.email,
     firstName: user.firstName || null,
     lastName: user.lastName || null,
-    dob: req.user ? user.dob : undefined,
-    address: req.user ? user.address : undefined
+    dob: req.user ? user.dob || null : undefined,
+    address: req.user ? user.address || null : undefined
   });
 };
 
@@ -132,7 +176,6 @@ exports.updateProfile = async (req, res) => {
   const { email } = req.params;
   let { firstName, lastName, dob, address } = req.body;
 
-  // === Validation ===
   if (firstName === undefined || lastName === undefined || dob === undefined || address === undefined) {
     return res.status(400).json({
       error: true,
