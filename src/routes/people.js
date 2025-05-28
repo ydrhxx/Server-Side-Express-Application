@@ -42,13 +42,27 @@ router.get('/:id', authenticateJWT, async (req, res) => {
       )
       .where('principals.nconst', id);
 
-    // Get characters
-    for (const role of roles) {
-      const charRow = await knex('characters')
-        .select('name')
-        .where({ tconst: role.movieId, nconst: id });
+    // Get characters (skip if table doesn't exist)
+    let charactersTableExists = true;
+    try {
+      await knex('characters').count('*');
+    } catch (err) {
+      if (err.code === 'ER_NO_SUCH_TABLE') {
+        charactersTableExists = false;
+      } else {
+        throw err;
+      }
+    }
 
-      role.characters = charRow.map(c => c.name);
+    for (const role of roles) {
+      if (charactersTableExists) {
+        const charRow = await knex('characters')
+          .select('name')
+          .where({ tconst: role.movieId, nconst: id });
+        role.characters = charRow.map(c => c.name);
+      } else {
+        role.characters = [];
+      }
     }
 
     person.roles = roles;
@@ -59,9 +73,5 @@ router.get('/:id', authenticateJWT, async (req, res) => {
     res.status(500).json({ error: true, message: 'Failed to fetch person' });
   }
 });
-
-module.exports = router;
-// Route: GET /people/:id
-router.get('/:id', peopleController.getPerson);
 
 module.exports = router;
