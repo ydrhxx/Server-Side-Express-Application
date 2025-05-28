@@ -23,14 +23,19 @@ module.exports = function authenticateJWT(req, res, next) {
   jwt.verify(token, SECRET, (err, payload) => {
     if (err) {
       if (err.name === 'TokenExpiredError') {
-        return res.status(401).json({ error: true, message: 'JWT token has expired' });
-      } else {
-        return res.status(401).json({ error: true, message: 'Invalid JWT token' });
+        return res.status(401).json({
+          error: true,
+          message: 'JWT token has expired'
+        });
       }
+
+      return res.status(401).json({
+        error: true,
+        message: 'Invalid JWT token'
+      });
     }
 
-    // Store user info on request
-    req.user = payload;
+    req.user = payload; // Store user info on the request object
     next();
   });
 };
