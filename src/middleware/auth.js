@@ -4,7 +4,6 @@ const SECRET = process.env.JWT_SECRET || 'default-dev-secret';
 module.exports = function authenticateJWT(req, res, next) {
   const authHeader = req.headers.authorization;
 
-  // Missing or malformed header
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({
       error: true,
@@ -12,25 +11,18 @@ module.exports = function authenticateJWT(req, res, next) {
     });
   }
 
-  const token = authHeader.slice(7); // Remove 'Bearer '
+  const token = authHeader.split(' ')[1];
 
-  jwt.verify(token, SECRET, (err, payload) => {
-    if (err) {
-      if (err.name === 'TokenExpiredError') {
-        return res.status(401).json({
-          error: true,
-          message: 'JWT token has expired'
-        });
-      }
-
-      return res.status(401).json({
-        error: true,
-        message: 'Invalid JWT token'
-      });
-    }
-
-    // Token is valid
+  try {
+    const payload = jwt.verify(token, SECRET);
     req.user = payload;
     next();
-  });
+  } catch (err) {
+    return res.status(401).json({
+      error: true,
+      message: err.name === 'TokenExpiredError'
+        ? 'JWT token has expired'
+        : 'Invalid JWT token'
+    });
+  }
 };

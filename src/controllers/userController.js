@@ -2,7 +2,7 @@ const knex = require('../db/knex');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const moment = require('moment');
-const SECRET = process.env.JWT_SECRET;
+const SECRET = process.env.JWT_SECRET || 'default-dev-secret';
 
 exports.register = async (req, res) => {
   try {
@@ -70,6 +70,7 @@ exports.login = async (req, res) => {
   });
 };
 
+
 exports.refresh = async (req, res) => {
   const { refreshToken } = req.body;
 
@@ -81,7 +82,7 @@ exports.refresh = async (req, res) => {
   }
 
   try {
-    const payload = jwt.verify(refreshToken, SECRET); // this throws TokenExpiredError
+    const payload = jwt.verify(refreshToken, SECRET);
 
     const accessToken = jwt.sign({ email: payload.email }, SECRET, { expiresIn: '10m' });
     const newRefreshToken = jwt.sign({ email: payload.email }, SECRET, { expiresIn: '1d' });
@@ -99,16 +100,11 @@ exports.refresh = async (req, res) => {
       }
     });
   } catch (err) {
-    if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        error: true,
-        message: 'JWT token has expired'
-      });
-    }
-
     return res.status(401).json({
       error: true,
-      message: 'Invalid JWT token'
+      message: err.name === 'TokenExpiredError'
+        ? 'JWT token has expired'
+        : 'Invalid JWT token'
     });
   }
 };
@@ -124,25 +120,17 @@ exports.logout = async (req, res) => {
   }
 
   try {
-    jwt.verify(refreshToken, SECRET); // will throw if expired or invalid
-
-    // (Optional) Here you would blacklist the token if implementing persistent sessions
-
+    jwt.verify(refreshToken, SECRET);
     return res.status(200).json({
       error: false,
       message: 'Token successfully invalidated'
     });
   } catch (err) {
-    if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        error: true,
-        message: 'JWT token has expired'
-      });
-    }
-
     return res.status(401).json({
       error: true,
-      message: 'Invalid JWT token'
+      message: err.name === 'TokenExpiredError'
+        ? 'JWT token has expired'
+        : 'Invalid JWT token'
     });
   }
 };
