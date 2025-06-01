@@ -1,4 +1,3 @@
-
 const express = require('express');
 const swaggerUi = require('swagger-ui-express');
 const cors = require('cors');
@@ -6,35 +5,29 @@ const swaggerDocument = require('./docs/openapi.json');
 
 const app = express();
 
-// === Middleware ===
+// Middleware
 app.use(express.json());
 app.use(cors());
 
-// === Force CORS headers for all responses ===
+// Force CORS headers for all responses
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   next();
 });
 
-// === Optional: Redirect root '/' to Swagger docs ===
-app.get('/', (req, res) => {
-  res.redirect('/docs');
-});
-
-// === API Routes ===
+// API Routes
 const moviesRoutes = require('./routes/movies');
 const userRoutes = require('./routes/user');
 const peopleRoutes = require('./routes/people');
-
 
 app.use('/movies', moviesRoutes);
 app.use('/user', userRoutes);
 app.use('/people', peopleRoutes);
 
-// === Swagger Docs at /docs ===
-app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+// Serve Swagger UI only at '/'
+app.get('/', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
-// === 404 for unmatched routes ===
+// 404 for unmatched routes
 app.use((req, res) => {
   res.status(404).json({
     error: true,

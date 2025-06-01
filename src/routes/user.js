@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const auth = require('../middleware/auth');
 const moment = require('moment');
 
-// === Auth Controllers ===
+//Auth Controllers
 const controller = require('../controllers/userController');
 
 router.post('/register', controller.register);
@@ -13,7 +13,7 @@ router.post('/login', controller.login);
 router.post('/refresh', controller.refresh);
 router.post('/logout', controller.logout);
 
-// === Profile Routes ===
+// Profile Routes
 
 // GET /user/:email/profile
 router.get('/:email/profile', async (req, res) => {
