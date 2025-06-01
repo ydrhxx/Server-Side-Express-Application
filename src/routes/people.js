@@ -11,6 +11,5 @@ const controller = require('../controllers/peopleController');
 // GET /people/:id (secured and fully handled by controller)
 router.get('/:id', authenticateJWT, controller.getPerson);
 
-
 // Export the router so it can be used in the main Express application
 module.exports = router;
